@@ -1,12 +1,23 @@
-////////////////////////////////////////////
 // Written by Jacob Rusch
 // 10/3/2016
 // code for analog watch dial
 // only for Aplite, Basalt, and Dorite
-////////////////////////////////////////////
+//
+//
+// *****
+//
+// 1.6
+// Switched from OpenWeatherMap.org to DarkSky.net.
+// Weather data in San Antonio, TX seems to be more accurate
+// from DarkSky.
+//
+//
+// *****
+
 
 #include <pebble.h>
 #include "watchface.h"
+
 
 static Window *s_main_window;
 static Layer *s_dial_layer, *s_hands_layer, *s_temp_circle, *s_battery_circle, *s_health_circle;
@@ -20,7 +31,9 @@ static double step_count;
 static char *char_current_steps;
 static bool charging;
 
+
 static ClaySettings settings; // An instance of the struct
+
 
 ///////////////////////////////
 // set default Clay settings //
@@ -30,6 +43,7 @@ static void config_default() {
   settings.ForegroundColor = GColorWhite;
   settings.InvertColors = false;
 }
+
 
 /////////////////////////////////////
 // load default settings from Clay //
@@ -41,26 +55,40 @@ static void config_load() {
   APP_LOG(APP_LOG_LEVEL_DEBUG, "config_load");
 }
 
+
 ///////////////////////
 // sets watch colors //
 ///////////////////////
 static void setColors() {
-  window_set_background_color(s_main_window, settings.BackgroundColor); // set background color
+  
+  // set background color
+  window_set_background_color(s_main_window, settings.BackgroundColor);
+  
+  // set text color for TextLayers
   text_layer_set_text_color(s_temp_layer, settings.ForegroundColor);
   text_layer_set_text_color(s_health_layer, settings.ForegroundColor);
   text_layer_set_text_color(s_day_text_layer, settings.ForegroundColor);
   text_layer_set_text_color(s_date_text_layer, settings.ForegroundColor);
-  layer_mark_dirty(s_hands_layer); // draw hands
-  load_icons(); // load appropriate icon
+  
+  // draw hands
+  layer_mark_dirty(s_hands_layer); 
+  
+  // load appropriate icon
+  load_icons(); 
   
   APP_LOG(APP_LOG_LEVEL_DEBUG, "setColors");
 }
 
+
+/////////////////////////
+// saves user settings //
+/////////////////////////
 static void config_save() {
   persist_write_data(SETTINGS_KEY, &settings, sizeof(settings));
   
   APP_LOG(APP_LOG_LEVEL_DEBUG, "config_save");
 }
+
 
 /////////////////////////
 // draws dial on watch //
@@ -85,6 +113,7 @@ static void dial_update_proc(Layer *layer, GContext *ctx) {
   graphics_context_set_stroke_color(ctx, settings.ForegroundColor);
   graphics_context_set_stroke_width(ctx, 6);
   
+  // draw marks
   for(int i=0; i<tick_marks_number; i++) {
     // if number is divisible by 5, make large mark
     if(i%5==0) {
@@ -120,9 +149,10 @@ static void dial_update_proc(Layer *layer, GContext *ctx) {
   graphics_draw_line(ctx, start_temp_line, end_temp_line);    
 }
 
-////////////////////////
-// update temperature //
-////////////////////////
+
+/////////////////////////////
+// draw temperature circle //
+/////////////////////////////
 static void temp_update_proc(Layer *layer, GContext *ctx) {
   graphics_context_set_stroke_color(ctx, settings.ForegroundColor);
   GPoint center = GPoint(144/2, 36);
@@ -130,6 +160,7 @@ static void temp_update_proc(Layer *layer, GContext *ctx) {
   graphics_context_set_stroke_width(ctx, 1);
   graphics_draw_circle(ctx, center, 40/2);
 }
+
 
 ///////////////////////////
 // update battery status //
@@ -150,6 +181,7 @@ static void battery_update_proc(Layer *layer, GContext *ctx) {
   layer_set_hidden(bitmap_layer_get_layer(s_charging_bitmap_layer), !charging);
 }
 
+
 //////////////////////////
 // update health status //
 //////////////////////////
@@ -158,6 +190,7 @@ static void health_update_proc(Layer *layer, GContext *ctx) {
   graphics_context_set_fill_color(ctx, settings.ForegroundColor);
   graphics_fill_radial(ctx, bounds, GOvalScaleModeFitCircle, 2, DEG_TO_TRIGANGLE(0), DEG_TO_TRIGANGLE((step_count/step_goal)*360));
 }
+
 
 /////////////////////////////////
 // draw hands and update ticks //
@@ -255,6 +288,7 @@ static void ticks_update_proc(Layer *layer, GContext *ctx) {
   graphics_fill_circle(ctx, center, 1);    
 }
 
+
 //////////////////////
 // load main window //
 //////////////////////
@@ -346,6 +380,7 @@ static void main_window_load(Window *window) {
   APP_LOG(APP_LOG_LEVEL_DEBUG, "main_window_load");
 }
 
+
 ///////////////////////
 // update clock time //
 ///////////////////////
@@ -387,6 +422,7 @@ static void update_time() {
   text_layer_set_text(s_day_text_layer, weekday); 
 }
 
+
 //////////////////
 // handle ticks //
 //////////////////
@@ -408,6 +444,7 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
   }  
 }
 
+
 /////////////////////////////////////
 // registers battery update events //
 /////////////////////////////////////
@@ -422,6 +459,7 @@ static void battery_handler(BatteryChargeState charge_state) {
   layer_mark_dirty(s_battery_circle);
 }
 
+
 /////////////////////////////
 // manage bluetooth status //
 /////////////////////////////
@@ -431,6 +469,7 @@ static void bluetooth_callback(bool connected) {
     vibes_double_pulse();
   }
 }
+
 
 // registers health update events
 static void health_handler(HealthEventType event, void *context) {
@@ -454,6 +493,7 @@ static void health_handler(HealthEventType event, void *context) {
     APP_LOG(APP_LOG_LEVEL_INFO, "health_handler completed");
   }
 }
+
 
 ///////////////////
 // unload window //
@@ -481,20 +521,41 @@ static void main_window_unload(Window *window) {
   bitmap_layer_destroy(s_charging_bitmap_layer);
 }
 
-///////////////////////////////////////////////////
-// display appropriate weather icon              //
-// works with DarkSky.net and OpenWeatherMap.org //
-///////////////////////////////////////////////////
+
+//////////////////////////////////////////////////////
+// display appropriate weather icon                 //
+// works with DarkSky.net and OpenWeatherMap.org    //
+// https://darksky.net/dev/docs/response#data-point //
+// https://openweathermap.org/weather-conditions    //
+//////////////////////////////////////////////////////
 static void load_icons() {
+  
   // if inverted
   if(settings.InvertColors) {
     // populate icon variable
+    
+    // DS clear-day
+    // OW 01d (clear sky, day)
+    
     if(strcmp(icon_buf, "clear-day")==0 || 
        strcmp(icon_buf, "01d")==0) {
       s_weather_bitmap = gbitmap_create_with_resource(RESOURCE_ID_CLEAR_SKY_DAY_BLACK_ICON);  
+      
+    // DS clear-night
+    // OW 01n (clear sky, night)
+      
     } else if(strcmp(icon_buf, "clear-night")==0 || 
               strcmp(icon_buf, "01n")==0) {
       s_weather_bitmap = gbitmap_create_with_resource(RESOURCE_ID_CLEAR_SKY_NIGHT_BLACK_ICON);
+      
+    // DS rain
+    // OW 09d (shower rain, day)
+    // OW 09n (shower rain, night)
+    // OW 10d (rain, day)
+    // OW 10n (rain, night)
+    // OW 11d (thunderstorm, day)
+    // OW 11n (thunderstorm, night)
+      
     } else if(strcmp(icon_buf, "rain")==0 ||
              strcmp(icon_buf, "09d")==0 || 
              strcmp(icon_buf, "09n")==0 || 
@@ -503,42 +564,95 @@ static void load_icons() {
              strcmp(icon_buf, "11d")==0 || 
              strcmp(icon_buf, "11n")==0) {
       s_weather_bitmap = gbitmap_create_with_resource(RESOURCE_ID_RAIN_BLACK_ICON);
+      
+    // OW 50d (mist, day)
+      
     } else if(strcmp(icon_buf, "50d")==0) {
       s_weather_bitmap = gbitmap_create_with_resource(RESOURCE_ID_MIST_DAY_BLACK_ICON);
+      
+    // OW 50n (mist, night)
+      
     } else if(strcmp(icon_buf, "50n")==0) {
       s_weather_bitmap = gbitmap_create_with_resource(RESOURCE_ID_MIST_NIGHT_BLACK_ICON);
+      
+    // DS snow
+    // OW 13d (snow, day)
+    // OW 13n (snow, night)
+      
     } else if(strcmp(icon_buf, "snow")==0 || 
               strcmp(icon_buf, "13d")==0 || 
               strcmp(icon_buf, "13n")==0) {
       s_weather_bitmap = gbitmap_create_with_resource(RESOURCE_ID_SNOW_BLACK_ICON);
+      
+    // DS sleet
+      
     } else if(strcmp(icon_buf, "sleet")==0) {
       s_weather_bitmap = gbitmap_create_with_resource(RESOURCE_ID_SLEET_BLACK_ICON);
+      
+    // DS wind
+      
     } else if(strcmp(icon_buf, "wind")==0) {
       s_weather_bitmap = gbitmap_create_with_resource(RESOURCE_ID_WIND_BLACK_ICON);
+      
+    // DS fog
+      
     } else if(strcmp(icon_buf, "fog")==0) {
       s_weather_bitmap = gbitmap_create_with_resource(RESOURCE_ID_FOG_BLACK_ICON);
+      
+    // DS cloudy
+      
     } else if(strcmp(icon_buf, "cloudy")==0) {
       s_weather_bitmap = gbitmap_create_with_resource(RESOURCE_ID_CLOUDY_BLACK_ICON);
+      
+    // DS partly-cloudy-day
+    // OW 02d (few clouds, day)
+    // OW 03d (scattered clouds, day)
+    // OW 04d (broken clouds, day)
+      
     } else if(strcmp(icon_buf, "partly-cloudy-day")==0 || 
               strcmp(icon_buf, "02d")==0 || 
               strcmp(icon_buf, "03d")==0 || 
               strcmp(icon_buf, "04d")==0) {
       s_weather_bitmap = gbitmap_create_with_resource(RESOURCE_ID_PARTLY_CLOUDY_DAY_BLACK_ICON);
+      
+    // DS partly-cloudy-night
+    // OW 02d (few clouds, night)
+    // OW 03d (scattered clouds, night)
+    // OW 04d (broken clouds, night)      
+      
     } else if(strcmp(icon_buf, "partly-cloudy-night")==0 || 
               strcmp(icon_buf, "02n")==0 || 
               strcmp(icon_buf, "03n")==0 || 
               strcmp(icon_buf, "04n")==0) {
       s_weather_bitmap = gbitmap_create_with_resource(RESOURCE_ID_PARTLY_CLOUDY_NIGHT_BLACK_ICON);
     } 
+    
   } else {
   // not inverted
   // populate icon variable
+    
+    // DS clear-day
+    // OW 01d (clear sky, day)    
+    
     if(strcmp(icon_buf, "clear-day")==0 || 
        strcmp(icon_buf, "01d")==0) {
       s_weather_bitmap = gbitmap_create_with_resource(RESOURCE_ID_CLEAR_SKY_DAY_WHITE_ICON);  
+      
+    // DS clear-night
+    // OW 01n (clear sky, night)
+      
     } else if(strcmp(icon_buf, "clear-night")==0 || 
               strcmp(icon_buf, "01n")==0) {
       s_weather_bitmap = gbitmap_create_with_resource(RESOURCE_ID_CLEAR_SKY_NIGHT_WHITE_ICON);
+      
+    // DS rain
+    // OW 09d (shower rain, day)
+    // OW 09n (shower rain, night)
+    // OW 10d (rain, day)
+    // OW 10n (rain, night)
+    // OW 11d (thunderstorm, day)
+    // OW 11n (thunderstorm, night)
+      
     } else if(strcmp(icon_buf, "rain")==0 ||
              strcmp(icon_buf, "09d")==0 || 
              strcmp(icon_buf, "09n")==0 || 
@@ -547,27 +661,62 @@ static void load_icons() {
              strcmp(icon_buf, "11d")==0 || 
              strcmp(icon_buf, "11n")==0) {
       s_weather_bitmap = gbitmap_create_with_resource(RESOURCE_ID_RAIN_WHITE_ICON);
+      
+    // OW 50d (mist, day)
+      
     } else if(strcmp(icon_buf, "50d")==0) {
       s_weather_bitmap = gbitmap_create_with_resource(RESOURCE_ID_MIST_DAY_WHITE_ICON);
+      
+    // OW 50n (mist, night)
+      
     } else if(strcmp(icon_buf, "50n")==0) {
       s_weather_bitmap = gbitmap_create_with_resource(RESOURCE_ID_MIST_NIGHT_WHITE_ICON);      
+      
+    // DS snow
+    // OW 13d (snow, day)
+    // OW 13n (snow, night)
+      
     } else if(strcmp(icon_buf, "snow")==0 || 
               strcmp(icon_buf, "13d")==0 || 
               strcmp(icon_buf, "13n")==0) {
       s_weather_bitmap = gbitmap_create_with_resource(RESOURCE_ID_SNOW_WHITE_ICON);
+      
+    // DS sleet
+      
     } else if(strcmp(icon_buf, "sleet")==0) {
       s_weather_bitmap = gbitmap_create_with_resource(RESOURCE_ID_SLEET_WHITE_ICON);
+      
+    // DS wind
+      
     } else if(strcmp(icon_buf, "wind")==0) {
       s_weather_bitmap = gbitmap_create_with_resource(RESOURCE_ID_WIND_WHITE_ICON);
+      
+    // DS fog
+      
     } else if(strcmp(icon_buf, "fog")==0) {
       s_weather_bitmap = gbitmap_create_with_resource(RESOURCE_ID_FOG_WHITE_ICON);
+      
+    // DS cloudy
+      
     } else if(strcmp(icon_buf, "cloudy")==0) {
       s_weather_bitmap = gbitmap_create_with_resource(RESOURCE_ID_CLOUDY_WHITE_ICON);
+      
+    // DS partly-cloudy-day
+    // OW 02d (few clouds, day)
+    // OW 03d (scattered clouds, day)
+    // OW 04d (broken clouds, day)
+      
     } else if(strcmp(icon_buf, "partly-cloudy-day")==0 || 
               strcmp(icon_buf, "02d")==0 || 
               strcmp(icon_buf, "03d")==0 || 
               strcmp(icon_buf, "04d")==0) {
       s_weather_bitmap = gbitmap_create_with_resource(RESOURCE_ID_PARTLY_CLOUDY_DAY_WHITE_ICON);
+      
+    // DS partly-cloudy-night
+    // OW 02d (few clouds, night)
+    // OW 03d (scattered clouds, night)
+    // OW 04d (broken clouds, night)
+      
     } else if(strcmp(icon_buf, "partly-cloudy-night")==0 || 
               strcmp(icon_buf, "02n")==0 || 
               strcmp(icon_buf, "03n")==0 || 
@@ -575,6 +724,7 @@ static void load_icons() {
       s_weather_bitmap = gbitmap_create_with_resource(RESOURCE_ID_PARTLY_CLOUDY_NIGHT_WHITE_ICON);
     }   
   }
+  
   // populate weather icon
   if(s_weather_bitmap_layer) {
     bitmap_layer_destroy(s_weather_bitmap_layer);
@@ -598,6 +748,7 @@ static void load_icons() {
   bitmap_layer_set_bitmap(s_health_bitmap_layer, s_health_bitmap); 
   layer_add_child(s_dial_layer, bitmap_layer_get_layer(s_health_bitmap_layer));  
 }
+
 
 ////////////////////////////
 // weather and Clay calls //
@@ -641,17 +792,22 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
   
   APP_LOG(APP_LOG_LEVEL_INFO, "inbox_received_callback");
 }
+
+
 static void inbox_dropped_callback(AppMessageResult reason, void *context) {
   APP_LOG(APP_LOG_LEVEL_ERROR, "Message dropped!");
 }
+
 
 static void outbox_failed_callback(DictionaryIterator *iterator, AppMessageResult reason, void *context) {
   APP_LOG(APP_LOG_LEVEL_ERROR, "Outbox send failed!");
 }
 
+
 static void outbox_sent_callback(DictionaryIterator *iterator, void *context) {
   APP_LOG(APP_LOG_LEVEL_INFO, "Outbox send success!");
 }
+
 
 ////////////////////
 // initialize app //
@@ -700,12 +856,14 @@ static void init() {
   APP_LOG(APP_LOG_LEVEL_DEBUG, "init");  
 }
 
+
 ///////////////////////
 // de-initialize app //
 ///////////////////////
 static void deinit() {
   window_destroy(s_main_window);
 }
+
 
 /////////////
 // run app //

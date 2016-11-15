@@ -25,7 +25,11 @@ module.exports = [
 	},
 	{
 		"type": "text",
-		"defaultValue": " Version 1.6"
-	}
+		"defaultValue": "Version 1.6"
+	},
+  {
+    "type": "text",
+    "defaultValue": "<a href='https://darksky.net/poweredby/'>Powered by Dark Sky</a>"
+  }
 ];
 
